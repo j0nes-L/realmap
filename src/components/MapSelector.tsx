@@ -14,6 +14,9 @@ type Status =
 const RESERVE_TOP = 128;
 const RESERVE_BOTTOM = 184;
 const SIDE_MARGIN = 24;
+// Fixed frame edge in pixels so the selected area is identical at a given zoom
+// regardless of screen size. Only shrinks if the viewport is too small to fit it.
+const FRAME_SIZE = 512;
 
 function computeSquare(el: HTMLElement): SquareRect {
   const w = el.clientWidth;
@@ -22,7 +25,7 @@ function computeSquare(el: HTMLElement): SquareRect {
   const bandBottom = h - RESERVE_BOTTOM;
   const bandHeight = Math.max(0, bandBottom - bandTop);
   const maxWidth = Math.max(0, w - SIDE_MARGIN * 2);
-  const size = Math.floor(Math.min(maxWidth, bandHeight));
+  const size = Math.floor(Math.min(FRAME_SIZE, maxWidth, bandHeight));
   const left = Math.round((w - size) / 2);
   const top = Math.round(bandTop + (bandHeight - size) / 2);
   return { left, top, size };
@@ -65,7 +68,7 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
-      minZoom: 12,
+      minZoom: 11,
       maxZoom: 14,
       attributionControl: true,
     });

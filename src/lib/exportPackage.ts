@@ -1,10 +1,6 @@
 import JSZip from "jszip";
 import type { SegmentationResult } from "./api";
 
-/**
- * Bundles the segmentation artifacts into a single `.zip` and triggers a
- * browser download. This archive is what the user drops into the Unity importer.
- */
 export async function downloadUnityPackage(
   result: SegmentationResult,
   fileNameBase = "realmap-terrain",
