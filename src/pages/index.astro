@@ -6,9 +6,9 @@ import MapSelector from "../components/MapSelector.tsx";
 <Layout>
     <main class="relative h-screen w-screen overflow-hidden">
         <header
-            class="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-slate-900/70 px-4 py-1.5 text-sm text-slate-200 backdrop-blur"
+            class="pointer-events-none absolute left-1/2 top-[4.5rem] z-[5] -translate-x-1/2 rounded-full border border-white/10 bg-stone-900/70 px-4 py-1.5 text-xs text-stone-300 backdrop-blur"
         >
-            Move the map under the frame · square selection for Unity
+            Pan and zoom to frame your export area
         </header>
 
         <MapSelector client:only="react" />
