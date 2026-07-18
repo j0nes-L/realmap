@@ -8,6 +8,9 @@ export async function downloadUnityPackage(
   const zip = new JSZip();
 
   zip.file("mask.png", base64ToBytes(result.maskPng));
+  if (result.satellitePng) {
+    zip.file("satellite.png", base64ToBytes(result.satellitePng));
+  }
   if (result.heightRaw) {
     zip.file("height.raw", base64ToBytes(result.heightRaw));
   }

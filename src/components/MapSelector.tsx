@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { readSelection, type SelectionMetadata, type SquareRect } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
-import { requestSegmentation, type SegmentationProgress } from "../lib/api";
+import { requestSegmentation, type SegmentationMode, type SegmentationProgress } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
 
 type Status =
@@ -42,6 +42,8 @@ export default function MapSelector() {
   const [selection, setSelection] = useState<SelectionMetadata | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
+  const [mode, setMode] = useState<SegmentationMode>("osm");
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [resultsOpen, setResultsOpen] = useState(false);
@@ -68,7 +70,7 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
-      minZoom: 11,
+      minZoom: 12.5,
       maxZoom: 15,
       attributionControl: true,
     });
@@ -161,6 +163,7 @@ export default function MapSelector() {
     try {
       const result = await requestSegmentation(
         current,
+        mode,
         (progress) => {
           setStatus({ kind: "loading", message: progressMessage(progress) });
         },
@@ -229,6 +232,24 @@ export default function MapSelector() {
       </div>
 
       <div className="pointer-events-auto absolute bottom-4 left-1/2 w-[min(92vw,520px)] -translate-x-1/2 rounded-xl border border-white/10 bg-stone-900/80 p-4 backdrop-blur">
+        <div className="mb-3 flex gap-1 rounded-lg bg-stone-800/60 p-1">
+          {(["osm", "ai", "hybrid"] as SegmentationMode[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              disabled={busy}
+              onClick={() => setMode(m)}
+              className={`flex-1 rounded-md py-1.5 text-xs font-medium transition ${
+                mode === m
+                  ? "bg-amber-500 text-stone-950 shadow"
+                  : "text-stone-400 hover:text-stone-200"
+              } disabled:cursor-not-allowed`}
+            >
+              {m === "osm" ? "OSM" : m === "ai" ? "AI" : "Hybrid"}
+            </button>
+          ))}
+        </div>
+
         <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-300 sm:grid-cols-4">
           <Metric label="Edge length" value={selection ? `${formatMeters(selection.edgeMeters)}` : "–"} />
           <Metric label="Zoom" value={selection ? selection.zoom.toFixed(2) : "–"} />

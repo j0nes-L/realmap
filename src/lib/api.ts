@@ -15,11 +15,14 @@ export interface Road {
 
 export interface SegmentationResult {
   maskPng: string;
+  satellitePng: string;
   heightRaw: string;
   buildings: Building[];
   roads: Road[];
   metadata: Record<string, unknown>;
 }
+
+export type SegmentationMode = "osm" | "ai" | "hybrid";
 
 export interface SegmentationRequest {
   boundingBox: {
@@ -34,6 +37,7 @@ export interface SegmentationRequest {
   heightMeters: number;
   edgeMeters: number;
   corners: Array<{ lng: number; lat: number }>;
+  mode: SegmentationMode;
 }
 
 export interface SegmentationProgress {
@@ -41,7 +45,7 @@ export interface SegmentationProgress {
   detail?: { name: string; index: number; total: number } | null;
 }
 
-function toRequest(selection: SelectionMetadata): SegmentationRequest {
+function toRequest(selection: SelectionMetadata, mode: SegmentationMode): SegmentationRequest {
   return {
     boundingBox: {
       minLng: selection.minLng,
@@ -55,6 +59,7 @@ function toRequest(selection: SelectionMetadata): SegmentationRequest {
     heightMeters: selection.heightMeters,
     edgeMeters: selection.edgeMeters,
     corners: selection.corners,
+    mode,
   };
 }
 
@@ -68,6 +73,7 @@ const API_URL = import.meta.env.PUBLIC_SEGMENTATION_API_URL;
  */
 export async function requestSegmentation(
   selection: SelectionMetadata,
+  mode: SegmentationMode = "osm",
   onProgress?: (progress: SegmentationProgress) => void,
   signal?: AbortSignal,
 ): Promise<SegmentationResult> {
@@ -77,7 +83,7 @@ export async function requestSegmentation(
     );
   }
 
-  const payload = toRequest(selection);
+  const payload = toRequest(selection, mode);
 
   let response: Response;
   try {
@@ -153,6 +159,7 @@ function normalizeResult(
   }
   return {
     maskPng: data.maskPng,
+    satellitePng: data.satellitePng ?? "",
     heightRaw: data.heightRaw ?? "",
     buildings: data.buildings ?? [],
     roads: data.roads ?? [],
