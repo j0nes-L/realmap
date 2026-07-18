@@ -13,16 +13,20 @@ export interface Road {
   path: Array<[number, number]>;
 }
 
+export interface Area {
+  class: string;
+  polygon: Array<[number, number]>;
+}
+
 export interface SegmentationResult {
   maskPng: string;
   satellitePng: string;
   heightRaw: string;
   buildings: Building[];
   roads: Road[];
+  areas: Area[];
   metadata: Record<string, unknown>;
 }
-
-export type SegmentationMode = "osm" | "ai" | "hybrid";
 
 export interface SegmentationRequest {
   boundingBox: {
@@ -37,7 +41,6 @@ export interface SegmentationRequest {
   heightMeters: number;
   edgeMeters: number;
   corners: Array<{ lng: number; lat: number }>;
-  mode: SegmentationMode;
 }
 
 export interface SegmentationProgress {
@@ -45,7 +48,7 @@ export interface SegmentationProgress {
   detail?: { name: string; index: number; total: number } | null;
 }
 
-function toRequest(selection: SelectionMetadata, mode: SegmentationMode): SegmentationRequest {
+function toRequest(selection: SelectionMetadata): SegmentationRequest {
   return {
     boundingBox: {
       minLng: selection.minLng,
@@ -59,7 +62,6 @@ function toRequest(selection: SelectionMetadata, mode: SegmentationMode): Segmen
     heightMeters: selection.heightMeters,
     edgeMeters: selection.edgeMeters,
     corners: selection.corners,
-    mode,
   };
 }
 
@@ -73,7 +75,6 @@ const API_URL = import.meta.env.PUBLIC_SEGMENTATION_API_URL;
  */
 export async function requestSegmentation(
   selection: SelectionMetadata,
-  mode: SegmentationMode = "osm",
   onProgress?: (progress: SegmentationProgress) => void,
   signal?: AbortSignal,
 ): Promise<SegmentationResult> {
@@ -83,7 +84,7 @@ export async function requestSegmentation(
     );
   }
 
-  const payload = toRequest(selection, mode);
+  const payload = toRequest(selection);
 
   let response: Response;
   try {
@@ -161,6 +162,7 @@ function normalizeResult(
     heightRaw: data.heightRaw ?? "",
     buildings: data.buildings ?? [],
     roads: data.roads ?? [],
+    areas: data.areas ?? [],
     metadata: { ...payload, ...(data.metadata ?? {}) },
   };
 }

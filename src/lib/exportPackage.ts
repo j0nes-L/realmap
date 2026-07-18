@@ -16,6 +16,7 @@ export async function downloadUnityPackage(
   }
   zip.file("buildings.json", JSON.stringify(result.buildings, null, 2));
   zip.file("roads.json", JSON.stringify(result.roads, null, 2));
+  zip.file("areas.json", JSON.stringify(result.areas, null, 2));
   zip.file("metadata.json", JSON.stringify(result.metadata, null, 2));
 
   const archive = await zip.generateAsync({
