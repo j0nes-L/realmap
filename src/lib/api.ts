@@ -112,13 +112,11 @@ export async function requestSegmentation(
 
   const contentType = response.headers.get("Content-Type") ?? "";
 
-  // Non-streaming fallback: a single JSON response.
   if (!contentType.includes("text/event-stream")) {
     const data = (await response.json()) as Partial<SegmentationResult>;
     return normalizeResult(data, payload);
   }
 
-  // SSE stream: frames separated by a blank line, each with `event:`/`data:`.
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
