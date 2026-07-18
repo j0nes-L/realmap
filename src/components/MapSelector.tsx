@@ -69,7 +69,7 @@ export default function MapSelector() {
       center: [13.405, 52.52],
       zoom: 14,
       minZoom: 11,
-      maxZoom: 14,
+      maxZoom: 15,
       attributionControl: true,
     });
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
