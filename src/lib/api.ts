@@ -1,7 +1,23 @@
 import type { SelectionMetadata } from "./geo";
 
+export interface Building {
+  type: string;
+  height: number;
+  baseElevation: number;
+  footprint: Array<[number, number]>;
+}
+
+export interface Road {
+  type: string;
+  width: number;
+  path: Array<[number, number]>;
+}
+
 export interface SegmentationResult {
-  maskBlob: Blob;
+  maskPng: string;
+  heightRaw: string;
+  buildings: Building[];
+  roads: Road[];
   metadata: Record<string, unknown>;
 }
 
@@ -18,6 +34,11 @@ export interface SegmentationRequest {
   heightMeters: number;
   edgeMeters: number;
   corners: Array<{ lng: number; lat: number }>;
+}
+
+export interface SegmentationProgress {
+  stage: string;
+  detail?: { name: string; index: number; total: number } | null;
 }
 
 function toRequest(selection: SelectionMetadata): SegmentationRequest {
@@ -39,8 +60,15 @@ function toRequest(selection: SelectionMetadata): SegmentationRequest {
 
 const API_URL = import.meta.env.PUBLIC_SEGMENTATION_API_URL;
 
+/**
+ * Posts the selection to the segmentation backend and streams progress via
+ * Server-Sent Events. `onProgress` fires for each `progress` event; the promise
+ * resolves with the final `result` payload. Falls back to a single JSON
+ * response if the backend does not stream.
+ */
 export async function requestSegmentation(
   selection: SelectionMetadata,
+  onProgress?: (progress: SegmentationProgress) => void,
   signal?: AbortSignal,
 ): Promise<SegmentationResult> {
   if (!API_URL) {
@@ -51,15 +79,26 @@ export async function requestSegmentation(
 
   const payload = toRequest(selection);
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw err;
+    throw new Error(
+      "Could not reach the segmentation API (network or CORS). The API only accepts requests from the production origin (realmap.jonasludorf.dev).",
+    );
+  }
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+  if (!response.ok || !response.body) {
+    const detail = await parseError(response);
     throw new Error(
       `Segmentation request failed (${response.status}). ${detail}`.trim(),
     );
@@ -67,39 +106,70 @@ export async function requestSegmentation(
 
   const contentType = response.headers.get("Content-Type") ?? "";
 
-  if (contentType.includes("application/json")) {
-    const data = (await response.json()) as {
-      maskPng?: string;
-      metadata?: Record<string, unknown>;
-    };
-    if (!data.maskPng) {
-      throw new Error("Backend response is missing the `maskPng` field.");
-    }
-    return {
-      maskBlob: base64ToBlob(data.maskPng, "image/png"),
-      metadata: { ...payload, ...(data.metadata ?? {}) },
-    };
+  // Non-streaming fallback: a single JSON response.
+  if (!contentType.includes("text/event-stream")) {
+    const data = (await response.json()) as Partial<SegmentationResult>;
+    return normalizeResult(data, payload);
   }
 
-  const maskBlob = await response.blob();
-  const headerMeta = response.headers.get("X-Segmentation-Metadata");
-  let backendMeta: Record<string, unknown> = {};
-  if (headerMeta) {
-    try {
-      backendMeta = JSON.parse(headerMeta);
-    } catch {
+  // SSE stream: frames separated by a blank line, each with `event:`/`data:`.
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: SegmentationResult | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const event = /^event: (.+)$/m.exec(frame)?.[1];
+      const raw = /^data: (.+)$/m.exec(frame)?.[1];
+      if (!raw) continue;
+      const data = JSON.parse(raw);
+      if (event === "progress") {
+        onProgress?.(data as SegmentationProgress);
+      } else if (event === "result") {
+        result = normalizeResult(data as Partial<SegmentationResult>, payload);
+      } else if (event === "error") {
+        throw new Error(data.error ?? "Segmentation failed.");
+      }
     }
   }
 
-  return { maskBlob, metadata: { ...payload, ...backendMeta } };
+  if (!result) throw new Error("Stream ended without a result.");
+  return result;
 }
 
-function base64ToBlob(base64: string, mime: string): Blob {
-  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
-  const binary = atob(clean);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+function normalizeResult(
+  data: Partial<SegmentationResult>,
+  payload: SegmentationRequest,
+): SegmentationResult {
+  if (!data.maskPng) {
+    throw new Error("Backend response is missing the `maskPng` field.");
   }
-  return new Blob([bytes], { type: mime });
+  return {
+    maskPng: data.maskPng,
+    heightRaw: data.heightRaw ?? "",
+    buildings: data.buildings ?? [],
+    roads: data.roads ?? [],
+    metadata: { ...payload, ...(data.metadata ?? {}) },
+  };
+}
+
+async function parseError(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    try {
+      const json = JSON.parse(text) as { error?: string };
+      return json.error ?? text;
+    } catch {
+      return text;
+    }
+  } catch {
+    return "";
+  }
 }

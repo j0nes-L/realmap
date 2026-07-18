@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { readSelection, type SelectionMetadata, type SquareRect } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
-import { requestSegmentation } from "../lib/api";
+import { requestSegmentation, type SegmentationProgress } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
 
 type Status =
@@ -156,7 +156,13 @@ export default function MapSelector() {
 
     setStatus({ kind: "loading", message: "Segmenting…" });
     try {
-      const result = await requestSegmentation(current, controller.signal);
+      const result = await requestSegmentation(
+        current,
+        (progress) => {
+          setStatus({ kind: "loading", message: progressMessage(progress) });
+        },
+        controller.signal,
+      );
       setStatus({ kind: "loading", message: "Bundling package…" });
       await downloadUnityPackage(result);
       setStatus({ kind: "done", message: "Download ready – Unity package created." });
@@ -279,6 +285,27 @@ function Spinner() {
 
 function statusMessage(status: Status): string {
   return status.kind === "loading" ? status.message : "Generate terrain";
+}
+
+function progressMessage(progress: SegmentationProgress): string {
+  switch (progress.stage) {
+    case "imagery":
+      return "Fetching satellite imagery…";
+    case "dem":
+      return "Loading elevation data…";
+    case "osm":
+      return "Loading map features…";
+    case "segment":
+      return "Running segmentation…";
+    case "class":
+      return progress.detail
+        ? `Classifying ${progress.detail.name} (${progress.detail.index}/${progress.detail.total})…`
+        : "Classifying…";
+    case "heightmap":
+      return "Building heightmap…";
+    default:
+      return "Processing…";
+  }
 }
 
 function formatMeters(meters: number): string {
