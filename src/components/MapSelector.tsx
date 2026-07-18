@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { readSelection, type SelectionMetadata } from "../lib/geo";
+import { readSelection, type SelectionMetadata, type SquareRect } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
 import { requestSegmentation } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
@@ -11,15 +11,31 @@ type Status =
   | { kind: "error"; message: string }
   | { kind: "done"; message: string };
 
-const OVERLAY_RATIO = 0.75;
+const RESERVE_TOP = 128;
+const RESERVE_BOTTOM = 184;
+const SIDE_MARGIN = 24;
+
+function computeSquare(el: HTMLElement): SquareRect {
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  const bandTop = RESERVE_TOP;
+  const bandBottom = h - RESERVE_BOTTOM;
+  const bandHeight = Math.max(0, bandBottom - bandTop);
+  const maxWidth = Math.max(0, w - SIDE_MARGIN * 2);
+  const size = Math.floor(Math.min(maxWidth, bandHeight));
+  const left = Math.round((w - size) / 2);
+  const top = Math.round(bandTop + (bandHeight - size) / 2);
+  return { left, top, size };
+}
 
 export default function MapSelector() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const skipSearchRef = useRef(false);
 
-  const [squareSize, setSquareSize] = useState(0);
+  const [square, setSquare] = useState<SquareRect>({ left: 0, top: 0, size: 0 });
   const [selection, setSelection] = useState<SelectionMetadata | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
@@ -49,6 +65,8 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
+      minZoom: 12,
+      maxZoom: 14,
       attributionControl: true,
     });
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
@@ -57,18 +75,13 @@ export default function MapSelector() {
     const refreshOverlaySize = () => {
       const el = mapContainerRef.current;
       if (!el) return;
-      setSquareSize(
-        Math.round(Math.min(el.clientWidth, el.clientHeight) * OVERLAY_RATIO),
-      );
+      setSquare(computeSquare(el));
     };
 
     const updateSelection = () => {
       const el = mapContainerRef.current;
       if (!el) return;
-      const size = Math.round(
-        Math.min(el.clientWidth, el.clientHeight) * OVERLAY_RATIO,
-      );
-      setSelection(readSelection(map, size));
+      setSelection(readSelection(map, computeSquare(el)));
     };
 
     map.on("load", () => {
@@ -90,6 +103,10 @@ export default function MapSelector() {
 
   useEffect(() => {
     if (!token) return;
+    if (skipSearchRef.current) {
+      skipSearchRef.current = false;
+      return;
+    }
     const trimmed = query.trim();
     if (trimmed.length < 2) {
       setResults([]);
@@ -115,20 +132,22 @@ export default function MapSelector() {
   const handleSelectResult = (result: GeocodeResult) => {
     const map = mapRef.current;
     if (!map) return;
+    skipSearchRef.current = true;
     setQuery(result.name);
+    setResults([]);
     setResultsOpen(false);
-    map.flyTo({
+    map.jumpTo({
       center: [result.lng, result.lat],
-      zoom: Math.max(map.getZoom(), 15),
-      essential: true,
+      zoom: Math.min(Math.max(map.getZoom(), 15), 18),
     });
   };
 
   const handleGenerate = async () => {
     const map = mapRef.current;
-    if (!map || busy) return;
+    const el = mapContainerRef.current;
+    if (!map || !el || busy) return;
 
-    const current = readSelection(map, squareSize);
+    const current = readSelection(map, computeSquare(el));
     setSelection(current);
 
     abortRef.current?.abort();
@@ -154,7 +173,7 @@ export default function MapSelector() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={mapContainerRef} className="absolute inset-0" />
+      <div ref={mapContainerRef} className="h-full w-full" />
 
       <div className="pointer-events-auto absolute left-1/2 top-4 z-10 w-[min(92vw,420px)] -translate-x-1/2">
         <div className="relative">
@@ -187,10 +206,10 @@ export default function MapSelector() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="pointer-events-none absolute inset-0">
         <div
-          className="relative border-2 border-amber-300/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-          style={{ width: squareSize, height: squareSize }}
+          className="absolute border-2 border-amber-300/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+          style={{ left: square.left, top: square.top, width: square.size, height: square.size }}
           aria-hidden="true"
         >
           <span className="absolute -left-0.5 -top-0.5 h-4 w-4 border-l-2 border-t-2 border-amber-200" />
