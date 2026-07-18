@@ -14,8 +14,6 @@ type Status =
 const RESERVE_TOP = 128;
 const RESERVE_BOTTOM = 184;
 const SIDE_MARGIN = 24;
-// Fixed frame edge in pixels so the selected area is identical at a given zoom
-// regardless of screen size. Only shrinks if the viewport is too small to fit it.
 const FRAME_SIZE = 512;
 
 function computeSquare(el: HTMLElement): SquareRect {
