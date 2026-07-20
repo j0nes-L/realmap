@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { readSelection, type SelectionMetadata } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
-import { requestSegmentation } from "../lib/api";
+import { requestSegmentation, type ProgressEvent } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
 
 type Status =
@@ -137,7 +137,11 @@ export default function MapSelector() {
 
     setStatus({ kind: "loading", message: "Segmenting…" });
     try {
-      const result = await requestSegmentation(current, controller.signal);
+      const result = await requestSegmentation(
+        current,
+        (event) => setStatus({ kind: "loading", message: progressMessage(event) }),
+        controller.signal,
+      );
       setStatus({ kind: "loading", message: "Bundling package…" });
       await downloadUnityPackage(result);
       setStatus({ kind: "done", message: "Download ready – Unity package created." });
@@ -260,6 +264,21 @@ function Spinner() {
 
 function statusMessage(status: Status): string {
   return status.kind === "loading" ? status.message : "Generate terrain";
+}
+
+function progressMessage(event: ProgressEvent): string {
+  switch (event.stage) {
+    case "imagery":
+      return "Fetching satellite imagery…";
+    case "dem":
+      return "Fetching elevation data…";
+    case "osm":
+      return "Fetching OpenStreetMap data…";
+    case "heightmap":
+      return "Building heightmap…";
+    default:
+      return "Segmenting…";
+  }
 }
 
 function formatMeters(meters: number): string {

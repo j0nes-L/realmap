@@ -7,7 +7,12 @@ export async function downloadUnityPackage(
 ): Promise<void> {
   const zip = new JSZip();
 
-  zip.file("mask.png", result.maskBlob);
+  zip.file("mask.png", base64ToBytes(result.maskPng));
+  zip.file("satellite.png", base64ToBytes(result.satellitePng));
+  zip.file("height.raw", base64ToBytes(result.heightRaw));
+  zip.file("buildings.json", JSON.stringify(result.buildings, null, 2));
+  zip.file("roads.json", JSON.stringify(result.roads, null, 2));
+  zip.file("areas.json", JSON.stringify(result.areas, null, 2));
   zip.file("metadata.json", JSON.stringify(result.metadata, null, 2));
 
   const archive = await zip.generateAsync({
@@ -24,6 +29,16 @@ export async function downloadUnityPackage(
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function timestamp(): string {

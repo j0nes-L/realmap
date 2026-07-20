@@ -29,7 +29,8 @@ as a Unity terrain package (`.zip` containing `mask.png` + `metadata.json`).
 
 ## Backend contract
 
-`POST` to `PUBLIC_SEGMENTATION_API_URL` with JSON:
+`POST` to `PUBLIC_SEGMENTATION_API_URL` with JSON (only `boundingBox` is
+required; other fields are forwarded into `metadata.json`):
 
 ```jsonc
 {
@@ -43,14 +44,40 @@ as a Unity terrain package (`.zip` containing `mask.png` + `metadata.json`).
 }
 ```
 
-Response – one of two variants:
+The mask is built from OpenStreetMap polygons/lines (Overpass) — CPU only, no
+GPU/AI segmentation involved.
 
-- **JSON:** `{ "maskPng": "<base64>", "metadata": { ... } }`
-- **Binary:** `image/png` in the body, metadata as a JSON string in the
-  `X-Segmentation-Metadata` header.
+Response is `application/json`, or `text/event-stream` (SSE) with progress
+events (`imagery` → `dem` → `osm` → `heightmap`) followed by a final `result`
+event, when the client sends `Accept: text/event-stream`:
 
-The frontend bundles the mask + metadata into a `.zip` using `jszip`, which can
-be dragged and dropped into the Unity editor importer.
+```jsonc
+{
+  "maskPng":      "<base64 PNG>",
+  "satellitePng": "<base64 PNG>",
+  "heightRaw":    "<base64 16-bit RAW>",
+  "buildings":    [ { "type": "...", "height": 0, "baseElevation": 0, "footprint": [[0, 0]] } ],
+  "roads":        [ { "type": "...", "width": 0, "path": [[0, 0]] } ],
+  "areas":        [ { "class": "...", "polygon": [[0, 0]] } ],
+  "metadata":     { /* forwarded request fields + backend metadata */ }
+}
+```
+
+The frontend bundles the mask, satellite image, heightmap, vector data, and
+metadata into a `.zip` using `jszip`:
+
+```
+realmap-terrain-<timestamp>.zip
+├── mask.png
+├── satellite.png
+├── height.raw
+├── buildings.json
+├── roads.json
+├── areas.json
+└── metadata.json
+```
+
+This archive can be dragged and dropped into the Unity editor importer.
 
 ## Deployment
 
