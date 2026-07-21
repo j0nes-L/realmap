@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import { readSelection, type SelectionMetadata, type SquareRect } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
-import { requestSegmentation, type SegmentationProgress } from "../lib/api";
+import { requestSegmentation, computeQuality, type SegmentationProgress } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
 
 type Status =
@@ -246,6 +246,7 @@ export default function MapSelector() {
         <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-stone-300">
           <Metric label="Edge length" value={selection ? `${formatMeters(selection.edgeMeters)}` : "–"} />
           <Metric label="Zoom" value={selection ? selection.zoom.toFixed(2) : "–"} />
+          <Metric label="Quality" value={selection ? computeQuality(selection.edgeMeters) : "–"} />
           <Metric
             label="Center"
             value={

@@ -28,6 +28,8 @@ export interface SegmentationResult {
   metadata: Record<string, unknown>;
 }
 
+export type SegmentationQuality = "standard" | "high" | "ultra";
+
 export interface SegmentationRequest {
   boundingBox: {
     minLng: number;
@@ -41,11 +43,23 @@ export interface SegmentationRequest {
   heightMeters: number;
   edgeMeters: number;
   corners: Array<{ lng: number; lat: number }>;
+  quality: SegmentationQuality;
 }
 
 export interface SegmentationProgress {
   stage: string;
   detail?: string | null;
+}
+
+/**
+ * Larger selections need higher-resolution textures/heightmaps to keep the
+ * same level of on-the-ground detail. Pick the quality tier from the real
+ * edge length of the selected square (see MODAL_API.md).
+ */
+export function computeQuality(edgeMeters: number): SegmentationQuality {
+  if (edgeMeters > 1800) return "ultra";
+  if (edgeMeters > 700) return "high";
+  return "standard";
 }
 
 function toRequest(selection: SelectionMetadata): SegmentationRequest {
@@ -62,6 +76,7 @@ function toRequest(selection: SelectionMetadata): SegmentationRequest {
     heightMeters: selection.heightMeters,
     edgeMeters: selection.edgeMeters,
     corners: selection.corners,
+    quality: computeQuality(selection.edgeMeters),
   };
 }
 
