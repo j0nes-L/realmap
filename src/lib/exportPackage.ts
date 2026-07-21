@@ -6,18 +6,19 @@ export async function downloadUnityPackage(
   fileNameBase = "realmap-terrain",
 ): Promise<void> {
   const zip = new JSZip();
+  const fileOptions = { date: toZipLocalDate(new Date()) };
 
-  zip.file("mask.png", base64ToBytes(result.maskPng));
+  zip.file("mask.png", base64ToBytes(result.maskPng), fileOptions);
   if (result.satellitePng) {
-    zip.file("satellite.png", base64ToBytes(result.satellitePng));
+    zip.file("satellite.png", base64ToBytes(result.satellitePng), fileOptions);
   }
   if (result.heightRaw) {
-    zip.file("height.raw", base64ToBytes(result.heightRaw));
+    zip.file("height.raw", base64ToBytes(result.heightRaw), fileOptions);
   }
-  zip.file("buildings.json", JSON.stringify(result.buildings, null, 2));
-  zip.file("roads.json", JSON.stringify(result.roads, null, 2));
-  zip.file("areas.json", JSON.stringify(result.areas, null, 2));
-  zip.file("metadata.json", JSON.stringify(result.metadata, null, 2));
+  zip.file("buildings.json", JSON.stringify(result.buildings, null, 2), fileOptions);
+  zip.file("roads.json", JSON.stringify(result.roads, null, 2), fileOptions);
+  zip.file("areas.json", JSON.stringify(result.areas, null, 2), fileOptions);
+  zip.file("metadata.json", JSON.stringify(result.metadata, null, 2), fileOptions);
 
   const archive = await zip.generateAsync({
     type: "blob",
@@ -47,4 +48,8 @@ function base64ToBytes(base64: string): Uint8Array {
 
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+}
+
+function toZipLocalDate(date: Date): Date {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000);
 }
