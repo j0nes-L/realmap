@@ -243,7 +243,7 @@ export default function MapSelector() {
       </div>
 
       <div className="pointer-events-auto absolute bottom-4 left-1/2 w-[min(92vw,520px)] -translate-x-1/2 rounded-xl border border-white/10 bg-stone-900/80 p-4 backdrop-blur">
-        <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-300 sm:grid-cols-4">
+        <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-stone-300">
           <Metric label="Edge length" value={selection ? `${formatMeters(selection.edgeMeters)}` : "–"} />
           <Metric label="Zoom" value={selection ? selection.zoom.toFixed(2) : "–"} />
           <Metric
@@ -289,9 +289,9 @@ export default function MapSelector() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0">
+    <div className="shrink-0">
       <div className="uppercase tracking-wide text-[10px] text-stone-500">{label}</div>
-      <div className="truncate whitespace-nowrap font-mono text-stone-100">{value}</div>
+      <div className="whitespace-nowrap font-mono text-stone-100">{value}</div>
     </div>
   );
 }
