@@ -27,10 +27,11 @@ export async function geocode(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const url = new URL("https://api.mapbox.com/search/geocode/v6/forward");
+  const url = new URL("https://api.mapbox.com/search/searchbox/v1/forward");
   url.searchParams.set("q", trimmed);
   url.searchParams.set("access_token", token);
   url.searchParams.set("limit", String(limit));
+  url.searchParams.set("language", navigator.language.split("-")[0] || "en");
 
   const response = await fetch(url, { signal });
   if (!response.ok) {
