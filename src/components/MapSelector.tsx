@@ -276,8 +276,7 @@ export default function MapSelector() {
 
         {lowZoom && (
           <p className="mt-2 text-sm text-amber-400">
-            Unter Zoom {GEODATA_MIN_ZOOM} werden keine Geodaten (Gebäude, Straßen,
-            Flächen) geliefert – nur Relief und Texturen.
+            Under zoom {GEODATA_MIN_ZOOM} only the relief / textures are exported.
           </p>
         )}
         {status.kind === "error" && (
