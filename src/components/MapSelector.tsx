@@ -66,7 +66,7 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
-      minZoom: 12.5,
+      minZoom: 10.5,
       maxZoom: 15,
       attributionControl: true,
     });
@@ -296,12 +296,6 @@ function progressMessage(progress: SegmentationProgress): string {
       return "Loading elevation data…";
     case "osm":
       return "Loading map features…";
-    case "segment":
-      return "Running segmentation…";
-    case "class":
-      return progress.detail
-        ? `Classifying ${progress.detail.name} (${progress.detail.index}/${progress.detail.total})…`
-        : "Classifying…";
     case "heightmap":
       return "Building heightmap…";
     default:

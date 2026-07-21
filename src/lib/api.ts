@@ -45,7 +45,7 @@ export interface SegmentationRequest {
 
 export interface SegmentationProgress {
   stage: string;
-  detail?: { name: string; index: number; total: number } | null;
+  detail?: string | null;
 }
 
 function toRequest(selection: SelectionMetadata): SegmentationRequest {
