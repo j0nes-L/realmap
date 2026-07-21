@@ -15,6 +15,7 @@ const RESERVE_TOP = 128;
 const RESERVE_BOTTOM = 184;
 const SIDE_MARGIN = 24;
 const FRAME_SIZE = 512;
+const GEODATA_MIN_ZOOM = 12.5;
 
 function computeSquare(el: HTMLElement): SquareRect {
   const w = el.clientWidth;
@@ -46,6 +47,15 @@ export default function MapSelector() {
 
   const token = import.meta.env.PUBLIC_MAPBOX_TOKEN;
   const busy = status.kind === "loading";
+  const lowZoom = selection ? selection.zoom < GEODATA_MIN_ZOOM : false;
+
+  useEffect(() => {
+    if (status.kind !== "done") return;
+    const handle = window.setTimeout(() => {
+      setStatus({ kind: "idle" });
+    }, 6000);
+    return () => window.clearTimeout(handle);
+  }, [status]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -66,8 +76,8 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
-      minZoom: 10.5,
-      maxZoom: 15,
+      minZoom: 9.5,
+      maxZoom: 16,
       attributionControl: true,
     });
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
@@ -182,6 +192,12 @@ export default function MapSelector() {
     <div className="relative h-full w-full">
       <div ref={mapContainerRef} className="h-full w-full" />
 
+      {status.kind === "done" && (
+        <div className="toast-enter pointer-events-none absolute right-4 top-4 z-20 max-w-[min(92vw,360px)] rounded-lg border border-emerald-400/30 bg-stone-900/90 px-4 py-3 text-sm text-emerald-300 shadow-xl backdrop-blur">
+          {status.message}
+        </div>
+      )}
+
       <div className="pointer-events-auto absolute left-1/2 top-4 z-10 w-[min(92vw,420px)] -translate-x-1/2">
         <div className="relative">
           <input
@@ -258,11 +274,14 @@ export default function MapSelector() {
           {busy ? statusMessage(status) : "Export Terrain"}
         </button>
 
+        {lowZoom && (
+          <p className="mt-2 text-sm text-amber-400">
+            Unter Zoom {GEODATA_MIN_ZOOM} werden keine Geodaten (Gebäude, Straßen,
+            Flächen) geliefert – nur Relief und Texturen.
+          </p>
+        )}
         {status.kind === "error" && (
           <p className="mt-2 text-sm text-red-400">{status.message}</p>
-        )}
-        {status.kind === "done" && (
-          <p className="mt-2 text-sm text-emerald-400">{status.message}</p>
         )}
       </div>
     </div>
@@ -271,9 +290,9 @@ export default function MapSelector() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="uppercase tracking-wide text-[10px] text-stone-500">{label}</div>
-      <div className="font-mono text-stone-100">{value}</div>
+      <div className="truncate whitespace-nowrap font-mono text-stone-100">{value}</div>
     </div>
   );
 }
