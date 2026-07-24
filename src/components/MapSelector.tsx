@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { readSelection, type SelectionMetadata } from "../lib/geo";
+import { readSelection, type SelectionMetadata, type SquareRect } from "../lib/geo";
 import { geocode, type GeocodeResult } from "../lib/geocode";
-import { requestSegmentation, type ProgressEvent } from "../lib/api";
+import { requestSegmentation, computeQuality, type SegmentationProgress } from "../lib/api";
 import { downloadUnityPackage } from "../lib/exportPackage";
 
 type Status =
@@ -11,15 +11,33 @@ type Status =
   | { kind: "error"; message: string }
   | { kind: "done"; message: string };
 
-const OVERLAY_RATIO = 0.75;
+const RESERVE_TOP = 128;
+const RESERVE_BOTTOM = 184;
+const SIDE_MARGIN = 24;
+const FRAME_SIZE = 512;
+const GEODATA_MIN_ZOOM = 12.5;
+
+function computeSquare(el: HTMLElement): SquareRect {
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  const bandTop = RESERVE_TOP;
+  const bandBottom = h - RESERVE_BOTTOM;
+  const bandHeight = Math.max(0, bandBottom - bandTop);
+  const maxWidth = Math.max(0, w - SIDE_MARGIN * 2);
+  const size = Math.floor(Math.min(FRAME_SIZE, maxWidth, bandHeight));
+  const left = Math.round((w - size) / 2);
+  const top = Math.round(bandTop + (bandHeight - size) / 2);
+  return { left, top, size };
+}
 
 export default function MapSelector() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const skipSearchRef = useRef(false);
 
-  const [squareSize, setSquareSize] = useState(0);
+  const [square, setSquare] = useState<SquareRect>({ left: 0, top: 0, size: 0 });
   const [selection, setSelection] = useState<SelectionMetadata | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
@@ -29,6 +47,15 @@ export default function MapSelector() {
 
   const token = import.meta.env.PUBLIC_MAPBOX_TOKEN;
   const busy = status.kind === "loading";
+  const lowZoom = selection ? selection.zoom < GEODATA_MIN_ZOOM : false;
+
+  useEffect(() => {
+    if (status.kind !== "done") return;
+    const handle = window.setTimeout(() => {
+      setStatus({ kind: "idle" });
+    }, 6000);
+    return () => window.clearTimeout(handle);
+  }, [status]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -49,26 +76,26 @@ export default function MapSelector() {
       style: "mapbox://styles/mapbox/satellite-v9",
       center: [13.405, 52.52],
       zoom: 14,
+      minZoom: 9.5,
+      maxZoom: 16,
       attributionControl: true,
     });
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-left");
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     mapRef.current = map;
 
     const refreshOverlaySize = () => {
       const el = mapContainerRef.current;
       if (!el) return;
-      setSquareSize(
-        Math.round(Math.min(el.clientWidth, el.clientHeight) * OVERLAY_RATIO),
-      );
+      setSquare(computeSquare(el));
     };
 
     const updateSelection = () => {
       const el = mapContainerRef.current;
       if (!el) return;
-      const size = Math.round(
-        Math.min(el.clientWidth, el.clientHeight) * OVERLAY_RATIO,
-      );
-      setSelection(readSelection(map, size));
+      setSelection(readSelection(map, computeSquare(el)));
     };
 
     map.on("load", () => {
@@ -90,6 +117,10 @@ export default function MapSelector() {
 
   useEffect(() => {
     if (!token) return;
+    if (skipSearchRef.current) {
+      skipSearchRef.current = false;
+      return;
+    }
     const trimmed = query.trim();
     if (trimmed.length < 2) {
       setResults([]);
@@ -115,20 +146,22 @@ export default function MapSelector() {
   const handleSelectResult = (result: GeocodeResult) => {
     const map = mapRef.current;
     if (!map) return;
+    skipSearchRef.current = true;
     setQuery(result.name);
+    setResults([]);
     setResultsOpen(false);
-    map.flyTo({
+    map.jumpTo({
       center: [result.lng, result.lat],
-      zoom: Math.max(map.getZoom(), 15),
-      essential: true,
+      zoom: Math.min(Math.max(map.getZoom(), 15), 18),
     });
   };
 
   const handleGenerate = async () => {
     const map = mapRef.current;
-    if (!map || busy) return;
+    const el = mapContainerRef.current;
+    if (!map || !el || busy) return;
 
-    const current = readSelection(map, squareSize);
+    const current = readSelection(map, computeSquare(el));
     setSelection(current);
 
     abortRef.current?.abort();
@@ -139,7 +172,9 @@ export default function MapSelector() {
     try {
       const result = await requestSegmentation(
         current,
-        (event) => setStatus({ kind: "loading", message: progressMessage(event) }),
+        (progress) => {
+          setStatus({ kind: "loading", message: progressMessage(progress) });
+        },
         controller.signal,
       );
       setStatus({ kind: "loading", message: "Bundling package…" });
@@ -158,7 +193,13 @@ export default function MapSelector() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={mapContainerRef} className="absolute inset-0" />
+      <div ref={mapContainerRef} className="h-full w-full" />
+
+      {status.kind === "done" && (
+        <div className="toast-enter pointer-events-none absolute right-4 top-4 z-20 max-w-[min(92vw,360px)] rounded-lg border border-emerald-400/30 bg-stone-900/90 px-4 py-3 text-sm text-emerald-300 shadow-xl backdrop-blur">
+          {status.message}
+        </div>
+      )}
 
       <div className="pointer-events-auto absolute left-1/2 top-4 z-10 w-[min(92vw,420px)] -translate-x-1/2">
         <div className="relative">
@@ -191,10 +232,10 @@ export default function MapSelector() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="pointer-events-none absolute inset-0">
         <div
-          className="relative border-2 border-amber-300/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-          style={{ width: squareSize, height: squareSize }}
+          className="absolute border-2 border-amber-300/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+          style={{ left: square.left, top: square.top, width: square.size, height: square.size }}
           aria-hidden="true"
         >
           <span className="absolute -left-0.5 -top-0.5 h-4 w-4 border-l-2 border-t-2 border-amber-200" />
@@ -205,9 +246,10 @@ export default function MapSelector() {
       </div>
 
       <div className="pointer-events-auto absolute bottom-4 left-1/2 w-[min(92vw,520px)] -translate-x-1/2 rounded-xl border border-white/10 bg-stone-900/80 p-4 backdrop-blur">
-        <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-stone-300 sm:grid-cols-4">
+        <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-stone-300">
           <Metric label="Edge length" value={selection ? `${formatMeters(selection.edgeMeters)}` : "–"} />
           <Metric label="Zoom" value={selection ? selection.zoom.toFixed(2) : "–"} />
+          <Metric label="Quality" value={selection ? computeQuality(selection.edgeMeters) : "–"} />
           <Metric
             label="Center"
             value={
@@ -236,11 +278,13 @@ export default function MapSelector() {
           {busy ? statusMessage(status) : "Export Terrain"}
         </button>
 
+        {lowZoom && (
+          <p className="mt-2 text-sm text-amber-400">
+            Under zoom {GEODATA_MIN_ZOOM} only the relief / textures are exported.
+          </p>
+        )}
         {status.kind === "error" && (
           <p className="mt-2 text-sm text-red-400">{status.message}</p>
-        )}
-        {status.kind === "done" && (
-          <p className="mt-2 text-sm text-emerald-400">{status.message}</p>
         )}
       </div>
     </div>
@@ -249,9 +293,9 @@ export default function MapSelector() {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="shrink-0">
       <div className="uppercase tracking-wide text-[10px] text-stone-500">{label}</div>
-      <div className="font-mono text-stone-100">{value}</div>
+      <div className="whitespace-nowrap font-mono text-stone-100">{value}</div>
     </div>
   );
 }
@@ -266,18 +310,18 @@ function statusMessage(status: Status): string {
   return status.kind === "loading" ? status.message : "Generate terrain";
 }
 
-function progressMessage(event: ProgressEvent): string {
-  switch (event.stage) {
+function progressMessage(progress: SegmentationProgress): string {
+  switch (progress.stage) {
     case "imagery":
       return "Fetching satellite imagery…";
     case "dem":
-      return "Fetching elevation data…";
+      return "Loading elevation data…";
     case "osm":
-      return "Fetching OpenStreetMap data…";
+      return "Loading map features…";
     case "heightmap":
       return "Building heightmap…";
     default:
-      return "Segmenting…";
+      return "Processing…";
   }
 }
 

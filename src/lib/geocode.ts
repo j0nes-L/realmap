@@ -7,8 +7,9 @@ export interface GeocodeResult {
 }
 
 interface GeocodeFeature {
-  id: string;
+  id?: string;
   properties?: {
+    mapbox_id?: string;
     name?: string;
     name_preferred?: string;
     place_formatted?: string;
@@ -27,10 +28,16 @@ export async function geocode(
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const url = new URL("https://api.mapbox.com/search/geocode/v6/forward");
+  const url = new URL("https://api.mapbox.com/search/searchbox/v1/forward");
   url.searchParams.set("q", trimmed);
   url.searchParams.set("access_token", token);
   url.searchParams.set("limit", String(limit));
+  url.searchParams.set("language", navigator.language.split("-")[0] || "en");
+  url.searchParams.set("auto_complete", "true");
+  url.searchParams.set(
+    "types",
+    "poi,place,locality,neighborhood,address,street,region,district,postcode,country",
+  );
 
   const response = await fetch(url, { signal });
   if (!response.ok) {
@@ -63,7 +70,7 @@ export async function geocode(
         name;
 
       return {
-        id: feature.id,
+        id: feature.properties?.mapbox_id ?? feature.id ?? `${coords[0]},${coords[1]}`,
         name,
         fullName,
         lng: coords[0],

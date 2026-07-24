@@ -28,6 +28,8 @@ export interface SegmentationResult {
   metadata: Record<string, unknown>;
 }
 
+export type SegmentationQuality = "standard" | "high" | "ultra";
+
 export interface SegmentationRequest {
   boundingBox: {
     minLng: number;
@@ -41,11 +43,23 @@ export interface SegmentationRequest {
   heightMeters: number;
   edgeMeters: number;
   corners: Array<{ lng: number; lat: number }>;
+  quality: SegmentationQuality;
 }
 
-export interface ProgressEvent {
-  stage: "imagery" | "dem" | "osm" | "heightmap";
-  detail: string | null;
+export interface SegmentationProgress {
+  stage: string;
+  detail?: string | null;
+}
+
+/**
+ * Larger selections need higher-resolution textures/heightmaps to keep the
+ * same level of on-the-ground detail. Pick the quality tier from the real
+ * edge length of the selected square (see MODAL_API.md).
+ */
+export function computeQuality(edgeMeters: number): SegmentationQuality {
+  if (edgeMeters > 1800) return "ultra";
+  if (edgeMeters > 700) return "high";
+  return "standard";
 }
 
 function toRequest(selection: SelectionMetadata): SegmentationRequest {
@@ -62,14 +76,21 @@ function toRequest(selection: SelectionMetadata): SegmentationRequest {
     heightMeters: selection.heightMeters,
     edgeMeters: selection.edgeMeters,
     corners: selection.corners,
+    quality: computeQuality(selection.edgeMeters),
   };
 }
 
 const API_URL = import.meta.env.PUBLIC_SEGMENTATION_API_URL;
 
+/**
+ * Posts the selection to the segmentation backend and streams progress via
+ * Server-Sent Events. `onProgress` fires for each `progress` event; the promise
+ * resolves with the final `result` payload. Falls back to a single JSON
+ * response if the backend does not stream.
+ */
 export async function requestSegmentation(
   selection: SelectionMetadata,
-  onProgress?: (event: ProgressEvent) => void,
+  onProgress?: (progress: SegmentationProgress) => void,
   signal?: AbortSignal,
 ): Promise<SegmentationResult> {
   if (!API_URL) {
@@ -78,17 +99,28 @@ export async function requestSegmentation(
     );
   }
 
-  const requestBody = toRequest(selection);
+  const payload = toRequest(selection);
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(requestBody),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw err;
+    throw new Error(
+      "Could not reach the segmentation API (network or CORS). The API only accepts requests from the production origin (realmap.jonasludorf.dev).",
+    );
+  }
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+  if (!response.ok || !response.body) {
+    const detail = await parseError(response);
     throw new Error(
       `Segmentation request failed (${response.status}). ${detail}`.trim(),
     );
@@ -96,20 +128,12 @@ export async function requestSegmentation(
 
   const contentType = response.headers.get("Content-Type") ?? "";
 
-  if (contentType.includes("text/event-stream") && response.body) {
-    const result = await readEventStream(response.body, onProgress);
-    return { ...result, metadata: { ...requestBody, ...result.metadata } };
+  if (!contentType.includes("text/event-stream")) {
+    const data = (await response.json()) as Partial<SegmentationResult>;
+    return normalizeResult(data, payload);
   }
 
-  const data = (await response.json()) as SegmentationResult;
-  return { ...data, metadata: { ...requestBody, ...(data.metadata ?? {}) } };
-}
-
-async function readEventStream(
-  body: ReadableStream<Uint8Array>,
-  onProgress?: (event: ProgressEvent) => void,
-): Promise<SegmentationResult> {
-  const reader = body.getReader();
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let result: SegmentationResult | null = null;
@@ -121,27 +145,53 @@ async function readEventStream(
 
     const frames = buffer.split("\n\n");
     buffer = frames.pop() ?? "";
-
     for (const frame of frames) {
-      const eventMatch = /^event: (.+)$/m.exec(frame);
-      const dataMatch = /^data: (.+)$/m.exec(frame);
-      if (!eventMatch || !dataMatch) continue;
-
-      const event = eventMatch[1].trim();
-      const data = JSON.parse(dataMatch[1]);
-
+      const event = /^event: (.+)$/m.exec(frame)?.[1];
+      const raw = /^data: (.+)$/m.exec(frame)?.[1];
+      if (!raw) continue;
+      const data = JSON.parse(raw);
       if (event === "progress") {
-        onProgress?.(data as ProgressEvent);
+        onProgress?.(data as SegmentationProgress);
       } else if (event === "result") {
-        result = data as SegmentationResult;
+        result = normalizeResult(data as Partial<SegmentationResult>, payload);
       } else if (event === "error") {
-        throw new Error(data.error ?? "Segmentation stream reported an error.");
+        throw new Error(data.error ?? "Segmentation failed.");
       }
     }
   }
 
-  if (!result) {
-    throw new Error("Stream ended without a result.");
-  }
+  if (!result) throw new Error("Stream ended without a result.");
   return result;
+}
+
+function normalizeResult(
+  data: Partial<SegmentationResult>,
+  payload: SegmentationRequest,
+): SegmentationResult {
+  if (!data.maskPng) {
+    throw new Error("Backend response is missing the `maskPng` field.");
+  }
+  return {
+    maskPng: data.maskPng,
+    satellitePng: data.satellitePng ?? "",
+    heightRaw: data.heightRaw ?? "",
+    buildings: data.buildings ?? [],
+    roads: data.roads ?? [],
+    areas: data.areas ?? [],
+    metadata: { ...payload, ...(data.metadata ?? {}) },
+  };
+}
+
+async function parseError(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    try {
+      const json = JSON.parse(text) as { error?: string };
+      return json.error ?? text;
+    } catch {
+      return text;
+    }
+  } catch {
+    return "";
+  }
 }

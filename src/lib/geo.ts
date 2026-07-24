@@ -35,18 +35,20 @@ function haversineMeters(
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+export interface SquareRect {
+  left: number;
+  top: number;
+  size: number;
+}
+
 export function readSelection(
   map: MapboxMap,
-  squareSizePx: number,
+  rect: SquareRect,
 ): SelectionMetadata {
-  const container = map.getContainer();
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-
-  const left = (width - squareSizePx) / 2;
-  const top = (height - squareSizePx) / 2;
-  const right = left + squareSizePx;
-  const bottom = top + squareSizePx;
+  const left = rect.left;
+  const top = rect.top;
+  const right = left + rect.size;
+  const bottom = top + rect.size;
 
   const topLeft = map.unproject([left, top]);
   const topRight = map.unproject([right, top]);
